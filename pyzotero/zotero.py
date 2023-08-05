@@ -1280,34 +1280,40 @@ class Zotero:
         'name': the name of the collection
         'parentCollection': OPTIONAL, the parent collection to which you wish to add this
         """
-        # no point in proceeding if there's no 'name' key
+
         for item in payload:
+            # no point in proceeding if there's no 'name' key
             if "name" not in item:
                 raise ze.ParamNotPassed("The dict you pass must include a 'name' key")
             # add a blank 'parentCollection' key if it hasn't been passed
             if "parentCollection" not in item:
                 item["parentCollection"] = ""
-        headers = {"Zotero-Write-Token": token()}
-        if last_modified is not None:
-            headers["If-Unmodified-Since-Version"] = str(last_modified)
-        headers.update(self.default_headers())
-        self._check_backoff()
-        req = requests.post(
-            url=build_url(
+
+            # this can fail if there are many collections, so we send separate request for each one
+            headers = {"Zotero-Write-Token": token()}
+            if last_modified is not None:
+                headers["If-Unmodified-Since-Version"] = str(last_modified)
+            headers.update(self.default_headers())
+
+            self._check_backoff()
+            req = requests.post(
+                url=build_url(
                 self.endpoint,
-                "/{t}/{u}/collections".format(t=self.library_type, u=self.library_id),
-            ),
-            headers=headers,
-            data=json.dumps(payload),
-        )
-        self.request = req
+                    "/{t}/{u}/collections".format(t=self.library_type, u=self.library_id),
+                ),
+                headers=headers,
+                data=json.dumps([item]),
+            )
+            self.request = req
+            
         try:
             req.raise_for_status()
         except requests.exceptions.HTTPError:
             error_handler(self, req)
-        backoff = req.headers.get("backoff") or req.headers.get("retry-after")
-        if backoff:
-            self._set_backoff(backoff)
+            backoff = req.headers.get("backoff") or req.headers.get("retry-after")
+            if backoff:
+                self._set_backoff(backoff)
+
         return req.json()
 
     @backoff_check
